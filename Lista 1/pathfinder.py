@@ -1,13 +1,3 @@
-"""
-pathfinder.py - Algorytm A* / Dijkstra do wyszukiwania najkrótszej ścieżki.
-
-Dijkstra = A* z heurystyką h=0.
-Jedyna różnica to co podasz jako funkcję heuristic.
-
-Główna funkcja: find_path(...)
-Zwraca: (ścieżka jako lista segmentów, statystyki) lub (None, statystyki)
-"""
-
 import heapq
 import math
 from graph import (
@@ -17,24 +7,16 @@ from graph import (
 from parser import GTFSData, format_time, format_duration
 
 
-# ==================== HEURYSTYKI ====================
-
 def zero_heuristic(stop_id):
-    """h(n) = 0 zawsze. Zamienia A* w Dijkstrę."""
+    """h(n) = 0 — zamienia A* w Dijkstrę."""
     return 0
 
 
 def make_haversine_heuristic(data: GTFSData, goal_stop_ids: set):
-    """
-    Tworzy heurystykę: odległość haversine do celu / max prędkość.
-    
-    Akceptowalna (admissible) bo max_speed >= rzeczywista prędkość,
-    więc h(n) <= rzeczywisty czas. A* gwarantuje optimum.
-    """
-    MAX_SPEED_KMH = 160.0  # km/h - hojna górna granica
-    EARTH_R = 6371.0  # km
+    """Tworzy heurystykę czasową: odległość haversine do celu / maks. prędkość. Admissible."""
+    MAX_SPEED_KMH = 160.0
+    EARTH_R = 6371.0
 
-    # Oblicz środek stacji docelowej
     lats, lons = [], []
     for sid in goal_stop_ids:
         stop = data.stops.get(sid)
@@ -48,43 +30,32 @@ def make_haversine_heuristic(data: GTFSData, goal_stop_ids: set):
         stop = data.stops.get(stop_id)
         if not stop:
             return 0
-        # Wzór haversine
         lat1, lon1 = math.radians(stop["lat"]), math.radians(stop["lon"])
         lat2, lon2 = math.radians(goal_lat), math.radians(goal_lon)
         dlat = lat2 - lat1
         dlon = lon2 - lon1
         a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
         dist_km = EARTH_R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        # Czas = odległość / prędkość, zamieniony na sekundy
         return int(dist_km / MAX_SPEED_KMH * 3600)
 
     return heuristic
 
 
 def make_transfer_heuristic(data: GTFSData, goal_stop_ids: set):
-    """
-    Heurystyka dla kryterium przesiadek.
-    
-    h(n) = 0 jeśli z przystanku n jedzie bezpośredni kurs do celu.
-    h(n) = 1 w przeciwnym razie (potrzeba minimum 1 przesiadki).
-    Akceptowalna: nigdy nie przeszacowuje.
-    """
-    # Znajdź stacje docelowe
+    """Heurystyka przesiadkowa: h=0 jeśli istnieje bezpośredni kurs do celu, h=1 w p.p. Admissible."""
     goal_stations = set()
     for gid in goal_stop_ids:
         goal_stations.add(data.get_station_id(gid))
 
-    # Znajdź przystanki z bezpośrednim kursem do celu
+    # Zbiór przystanków z bezpośrednim kursem do stacji docelowej
     direct_stops = set()
     for trip_id, st_list in data.stop_times.items():
-        # Czy ten trip przejeżdża przez stację docelową?
         hits_goal = False
         for st in st_list:
             if data.get_station_id(st["stop_id"]) in goal_stations:
                 hits_goal = True
                 break
         if hits_goal:
-            # Wszystkie przystanki PRZED celem mają bezpośrednie połączenie
             for st in st_list:
                 if data.get_station_id(st["stop_id"]) in goal_stations:
                     break
@@ -98,45 +69,21 @@ def make_transfer_heuristic(data: GTFSData, goal_stop_ids: set):
     return heuristic
 
 
-# ==================== ALGORYTM A* / DIJKSTRA ====================
-
 def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuristic):
-    """
-    Znajdź najkrótszą ścieżkę z start do end.
-    
-    Parametry:
-        data        - GTFSData (dane GTFS)
-        departures  - dict z graph.build_graph() (indeks odjazdów)
-        start_ids   - zbiór stop_id startowych peronów
-        end_ids     - zbiór stop_id docelowych peronów
-        start_time  - czas startu w sekundach od północy
-        criterion   - "time" lub "transfers"
-        heuristic   - funkcja stop_id -> int (szacowany koszt do celu)
-    
-    Zwraca:
-        (segments, stats) gdzie segments to lista segmentów ścieżki,
-        lub (None, stats) jeśli brak połączenia.
-    """
-    # Stacje docelowe (do sprawdzania celu)
     goal_stations = set()
     for gid in end_ids:
         goal_stations.add(data.get_station_id(gid))
 
-    # Kolejka priorytetowa: (f_cost, counter, state)
-    # counter zapobiega porównywaniu state'ów przy równych f_cost
+    # Kolejka: (f_cost, counter, state)
     # state = (stop_id, current_time, g_cost, transfers, last_trip_id, parent_idx, last_conn)
     counter = 0
     pq = []
-    states = []  # przechowujemy stany do odtwarzania ścieżki
-
-    # Najlepszy znany koszt dla każdego stanu
+    states = []
     best = {}
 
-    # Dodaj stany początkowe (wszystkie perony stacji startowej)
     for sid in start_ids:
         h = heuristic(sid)
         state = (sid, start_time, 0, 0, None, -1, None)
-        # state: (stop_id, time, g_cost, transfers, last_trip_id, parent_idx, last_conn)
         heapq.heappush(pq, (0 + h, counter, state))
         counter += 1
 
@@ -146,9 +93,7 @@ def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuri
         f_cost, _, state = heapq.heappop(pq)
         stop_id, cur_time, g_cost, transfers, last_trip, parent_idx, last_conn = state
 
-        # Czy dotarliśmy do celu?
         if data.get_station_id(stop_id) in goal_stations:
-            # Odtwórz ścieżkę
             path = _reconstruct(states, parent_idx, last_conn)
             segments = _build_segments(path)
             stats = {
@@ -159,7 +104,6 @@ def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuri
             }
             return segments, stats
 
-        # Pruning: czy już widzieliśmy ten stan z lepszym kosztem?
         if criterion == "transfers":
             key = (stop_id, last_trip)
         else:
@@ -170,44 +114,37 @@ def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuri
         best[key] = g_cost
         nodes_expanded += 1
 
-        # Zapamiętaj stan (do odtwarzania ścieżki)
         state_idx = len(states)
         states.append(state)
 
-        # === ROZWIŃ: sprawdź odjazdy z bieżącego przystanku ===
+        # Rozwiń: odjazdy z bieżącego przystanku
         conns = get_departures_after(departures, stop_id, cur_time)
-        seen_trip = None  # deduplikacja: bierz tylko 1 odjazd per trip
+        seen_trip = None
         count = 0
 
         for conn in conns:
-            # Limit: nie czekaj dłużej niż 4 godziny
             if conn[DEPARTURE] - cur_time > 4 * 3600:
                 break
-            # Limit: max 500 połączeń per przystanku
             if count >= 500:
                 break
 
-            # Deduplikacja: pomijaj kolejne odjazdy tego samego tripu
             if conn[TRIP_ID] == seen_trip:
                 continue
             seen_trip = conn[TRIP_ID]
             count += 1
 
-            # Czy to jest przesiadka?
             is_transfer = (last_trip is not None and last_trip != conn[TRIP_ID])
             new_transfers = transfers + (1 if is_transfer else 0)
             new_time = conn[ARRIVAL]
 
-            # Oblicz koszt
             if criterion == "time":
-                new_g = new_time - start_time  # całkowity czas podróży
+                new_g = new_time - start_time
             else:
-                new_g = new_transfers  # liczba przesiadek
+                new_g = new_transfers
 
             h = heuristic(conn[TO_STOP])
             new_f = new_g + h
 
-            # Pruning
             if criterion == "transfers":
                 new_key = (conn[TO_STOP], conn[TRIP_ID])
             else:
@@ -220,7 +157,7 @@ def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuri
             heapq.heappush(pq, (new_f, counter, new_state))
             counter += 1
 
-        # === ROZWIŃ: przejdź na inny peron tej samej stacji ===
+        # Rozwiń: przejście na inny peron tej samej stacji (koszt 0)
         for platform_id in get_sibling_platforms(data, stop_id):
             if platform_id == stop_id:
                 continue
@@ -240,14 +177,11 @@ def find_path(data, departures, start_ids, end_ids, start_time, criterion, heuri
             heapq.heappush(pq, (new_f, counter, new_state))
             counter += 1
 
-    # Brak połączenia
     return None, {"nodes_expanded": nodes_expanded}
 
 
-# ==================== ODTWARZANIE ŚCIEŻKI ====================
-
 def _reconstruct(states, parent_idx, last_conn):
-    """Odtwórz listę połączeń (connections) od startu do celu."""
+    """Odtwarza listę połączeń od startu do celu przechodząc po parent_idx."""
     path = []
     if last_conn is not None:
         path.append(last_conn)
@@ -255,21 +189,17 @@ def _reconstruct(states, parent_idx, last_conn):
     idx = parent_idx
     while idx >= 0:
         state = states[idx]
-        conn = state[6]  # last_conn
+        conn = state[6]
         if conn is not None:
             path.append(conn)
-        idx = state[5]  # parent_idx
+        idx = state[5]
 
     path.reverse()
     return path
 
 
 def _build_segments(path):
-    """
-    Złącz kolejne połączenia na tym samym tripie w segmenty.
-    
-    Np. 15 przystanków na D6 → jeden segment "Wrocław Główny → Jelenia Góra | D6".
-    """
+    """Łączy kolejne połączenia na tym samym tripie w jeden segment (np. 15 przystanków -> 1 segment)."""
     if not path:
         return []
 
@@ -284,11 +214,9 @@ def _build_segments(path):
     for i in range(1, len(path)):
         conn = path[i]
         if conn[TRIP_ID] == cur_trip:
-            # Ten sam trip - przedłuż segment
             seg_to = conn[TO_NAME]
             seg_arr = conn[ARRIVAL]
         else:
-            # Nowy trip - zapisz poprzedni segment
             segments.append({
                 "from": seg_from, "to": seg_to, "route": seg_route,
                 "departure": seg_dep, "arrival": seg_arr,
@@ -300,7 +228,6 @@ def _build_segments(path):
             seg_arr = conn[ARRIVAL]
             seg_route = conn[ROUTE_NAME]
 
-    # Ostatni segment
     segments.append({
         "from": seg_from, "to": seg_to, "route": seg_route,
         "departure": seg_dep, "arrival": seg_arr,
@@ -309,25 +236,20 @@ def _build_segments(path):
     return segments
 
 
-# ==================== WYPISYWANIE WYNIKU ====================
-
 def print_result(segments, stats, start_time, criterion):
-    """Wypisz wynik: stdout = trasa, stderr = podsumowanie."""
+    """Wypisuje wynik: stdout = trasa, stderr = podsumowanie."""
     import sys
 
-    # stdout: szczegóły trasy
     for i, seg in enumerate(segments):
         print(f"{seg['from']} | {seg['to']} | {seg['route']} | "
               f"{format_time(seg['departure'])} | {format_time(seg['arrival'])}")
 
-        # Info o przesiadce między segmentami
         if i < len(segments) - 1:
             next_seg = segments[i + 1]
             wait = next_seg["departure"] - seg["arrival"]
             if wait > 0:
                 print(f"  --- Przesiadka ({format_duration(wait)} oczekiwania) ---")
 
-    # stderr: podsumowanie
     print("--- Wynik ---", file=sys.stderr)
     if criterion == "time":
         print(f"Kryterium: czas przejazdu", file=sys.stderr)

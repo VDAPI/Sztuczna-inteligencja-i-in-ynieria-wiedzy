@@ -1,16 +1,3 @@
-"""
-tsp.py - Tabu Search dla problemu komiwojażera (Zadanie 2).
-
-Mamy start A i listę przystanków L. Szukamy najlepszej kolejności
-odwiedzania przystanków: A -> perm[0] -> perm[1] -> ... -> A.
-
-4 warianty:
-  basic      - lista tabu bez limitu rozmiaru
-  variable   - lista tabu z rozmiarem zależnym od |L|
-  aspiration - pozwala łamać tabu jeśli wynik poprawia globalne optimum
-  sampling   - losowe próbkowanie sąsiedztwa + operacje insert
-"""
-
 import random
 from collections import deque
 from pathfinder import find_path, make_haversine_heuristic, make_transfer_heuristic
@@ -24,11 +11,11 @@ class TSPSolver:
         self.departures = departures
         self.criterion = criterion
         self.start_time = start_time
-        self.cost_cache = {}   # (from, to, time) -> (cost, arrival)
-        self.path_cache = {}   # (from, to, time) -> segments
+        self.cost_cache = {}    # (from, to, time) (cost, arrival)
+        self.path_cache = {}    # (from, to, time) segments
 
     def _compute_cost(self, from_name, to_name, dep_time):
-        """Oblicz koszt podróży z from do to, startując o dep_time."""
+        """Oblicza koszt podróży A->B startując o dep_time."""
         key = (from_name, to_name, dep_time)
         if key in self.cost_cache:
             return self.cost_cache[key]
@@ -39,7 +26,6 @@ class TSPSolver:
             self.cost_cache[key] = None
             return None
 
-        # Wybierz heurystykę
         if self.criterion == "time":
             h = make_haversine_heuristic(self.data, to_ids)
         else:
@@ -62,7 +48,7 @@ class TSPSolver:
         return (cost, arrival)
 
     def _evaluate(self, start_name, perm):
-        """Oblicz całkowity koszt permutacji: start -> perm -> start."""
+        """Oblicza całkowity koszt permutacji: start -> perm[0] -> ... -> perm[n] -> start."""
         total_cost = 0
         time = self.start_time
         from_name = start_name
@@ -79,7 +65,6 @@ class TSPSolver:
             time = arrival
             from_name = to_name
 
-        # Powrót do startu
         result = self._compute_cost(from_name, start_name, time)
         if result is None:
             return float("inf")
@@ -92,7 +77,7 @@ class TSPSolver:
         return total_cost
 
     def _swap_2opt(self, perm, i, j):
-        """Operacja 2-opt: odwróć fragment permutacji między i a j."""
+        """Operacja 2-opt: odwraca fragment permutacji między indeksami i a j."""
         new = perm[:i] + perm[i:j + 1][::-1] + perm[j + 1:]
         return new
 
@@ -101,7 +86,7 @@ class TSPSolver:
         return ">".join(perm)
 
     def build_full_path(self, start_name, perm):
-        """Zbuduj pełną ścieżkę (segmenty) dla danej permutacji."""
+        """Buduje pełną listę segmentów trasy dla danej permutacji."""
         all_segments = []
         time = self.start_time
         from_name = start_name
@@ -117,7 +102,6 @@ class TSPSolver:
             time = arrival
             from_name = to_name
 
-        # Powrót
         result = self._compute_cost(from_name, start_name, time)
         if result:
             _, arrival = result
@@ -127,10 +111,8 @@ class TSPSolver:
 
         return all_segments
 
-    # ==================== WARIANT A: BASIC ====================
-
     def solve_basic(self, start_name, stop_names, step_limit=200):
-        """Tabu Search bez limitu rozmiaru T."""
+        """Wariant A: lista tabu bez limitu rozmiaru."""
         perm = list(stop_names)
         random.shuffle(perm)
         best_perm = list(perm)
@@ -146,7 +128,6 @@ class TSPSolver:
             best_neighbor = None
             best_neighbor_cost = float("inf")
 
-            # Sprawdź wszystkich sąsiadów 2-opt
             n = len(perm)
             for i in range(n - 1):
                 for j in range(i + 1, n):
@@ -172,10 +153,8 @@ class TSPSolver:
 
         return best_perm, best_cost
 
-    # ==================== WARIANT B: VARIABLE ====================
-
     def solve_variable(self, start_name, stop_names, step_limit=200):
-        """Tabu Search ze zmiennym rozmiarem T (zależnym od |L|)."""
+        """Wariant B: lista tabu z rozmiarem zależnym od |L| (FIFO)."""
         n = len(stop_names)
         tabu_size = max(5, n * n // 2)
 
@@ -216,7 +195,6 @@ class TSPSolver:
             tabu_queue.append(nk)
             tabu_set.add(nk)
 
-            # FIFO: usuń najstarszy wpis jeśli tabu za duże
             while len(tabu_queue) > tabu_size:
                 old = tabu_queue.popleft()
                 tabu_set.discard(old)
@@ -227,10 +205,8 @@ class TSPSolver:
 
         return best_perm, best_cost
 
-    # ==================== WARIANT C: ASPIRATION ====================
-
     def solve_aspiration(self, start_name, stop_names, step_limit=200):
-        """Tabu Search z kryterium aspiracji."""
+        """Wariant C: kryterium aspiracji — ruch tabu dozwolony jeśli poprawia globalne optimum."""
         n = len(stop_names)
         tabu_size = max(5, n * n // 2)
 
@@ -258,7 +234,6 @@ class TSPSolver:
                     nc = self._evaluate(start_name, neighbor)
 
                     is_tabu = nk in tabu_set
-                    # ASPIRACJA: pozwól na ruch tabu jeśli poprawia globalne optimum
                     if is_tabu and nc >= best_cost:
                         continue
 
@@ -283,10 +258,8 @@ class TSPSolver:
 
         return best_perm, best_cost
 
-    # ==================== WARIANT D: SAMPLING ====================
-
     def solve_sampling(self, start_name, stop_names, step_limit=200):
-        """Tabu Search z próbkowaniem sąsiedztwa + operacje insert."""
+        """Wariant D: losowe próbkowanie sąsiedztwa (2-opt + insert) z aspiracją."""
         n = len(stop_names)
         tabu_size = max(5, n * n // 2)
         sample_size = max(10, n * 2)

@@ -1,19 +1,3 @@
-"""
-main.py - Punkt wejścia programu.
-
-Zadanie 1 (A -> B):
-    python main.py <start> <cel> <t|p> <HH:MM:SS> [RRRR-MM-DD] [dijkstra|astar]
-
-Zadanie 2 (TSP):
-    python main.py --tsp <start> <stop1;stop2;...> <t|p> <HH:MM:SS> [RRRR-MM-DD] [basic|variable|aspiration|sampling]
-
-Przykłady:
-    python main.py "Wroclaw Glowny" "Jelenia Gora" t 08:00:00 2026-03-10 dijkstra
-    python main.py "Wroclaw Glowny" "Jelenia Gora" t 08:00:00 2026-03-10 astar
-    python main.py "Wroclaw Glowny" "Jelenia Gora" p 08:00:00 2026-03-10 astar
-    python main.py --tsp "Wroclaw Glowny" "Legnica;Jelenia Gora;Walbrzych Glowny" t 06:00:00
-"""
-
 import sys
 import os
 import time
@@ -32,7 +16,7 @@ DEFAULT_DATE = "2026-03-10"
 
 
 def find_gtfs_dir():
-    """Znajdź katalog z danymi GTFS."""
+    """Szuka katalogu z danymi GTFS w kilku typowych lokalizacjach."""
     candidates = [
         "data/google_transit",
         "google_transit",
@@ -47,9 +31,8 @@ def find_gtfs_dir():
     sys.exit(1)
 
 
-# ==================== ZADANIE 1: A -> B ====================
-
 def run_pathfinding(args):
+    """Zadanie 1: wyszukiwanie trasy A -> B (Dijkstra / A*)."""
     start_name = args[0]
     end_name = args[1]
     criterion = "transfers" if args[2].lower() == "p" else "time"
@@ -58,15 +41,12 @@ def run_pathfinding(args):
     algo = args[5] if len(args) > 5 else "astar"
     query_date = date.fromisoformat(date_str)
 
-    # Wczytaj dane
     gtfs_dir = find_gtfs_dir()
     print(f"Ladowanie GTFS z: {gtfs_dir}", file=sys.stderr)
     data = GTFSData(gtfs_dir)
 
-    # Zbuduj graf
     departures = build_graph(data, query_date)
 
-    # Znajdź przystanki
     start_ids = data.get_stop_ids_for_name(start_name)
     end_ids = data.get_stop_ids_for_name(end_name)
 
@@ -82,7 +62,6 @@ def run_pathfinding(args):
     print(f"Kryterium: {'czas' if criterion == 'time' else 'przesiadki'}", file=sys.stderr)
     print(f"Algorytm: {algo}", file=sys.stderr)
 
-    # Wybierz heurystykę
     if algo == "dijkstra":
         heuristic = zero_heuristic
     elif criterion == "time":
@@ -90,7 +69,6 @@ def run_pathfinding(args):
     else:
         heuristic = make_transfer_heuristic(data, end_ids)
 
-    # Szukaj!
     t0 = time.time()
     segments, stats = find_path(data, departures, start_ids, end_ids,
                                 start_time, criterion, heuristic)
@@ -104,10 +82,8 @@ def run_pathfinding(args):
     print_result(segments, stats, start_time, criterion)
 
 
-# ==================== ZADANIE 2: TSP ====================
-
 def run_tsp(args):
-    # --tsp <start> <stop1;stop2;...> <t|p> <HH:MM:SS> [date] [variant]
+    """Zadanie 2: problem komiwojażera (Tabu Search)."""
     start_name = args[1]
     stop_names = [s.strip() for s in args[2].split(";")]
     criterion = "transfers" if args[3].lower() == "p" else "time"
@@ -116,7 +92,6 @@ def run_tsp(args):
     variant = args[6] if len(args) > 6 else "aspiration"
     query_date = date.fromisoformat(date_str)
 
-    # Wczytaj dane
     gtfs_dir = find_gtfs_dir()
     print(f"Ladowanie GTFS z: {gtfs_dir}", file=sys.stderr)
     data = GTFSData(gtfs_dir)
@@ -136,11 +111,10 @@ def run_tsp(args):
         best_perm, best_cost = solver.solve_variable(start_name, stop_names, step_limit)
     elif variant == "sampling":
         best_perm, best_cost = solver.solve_sampling(start_name, stop_names, step_limit)
-    else:  # aspiration (default)
+    else:
         best_perm, best_cost = solver.solve_aspiration(start_name, stop_names, step_limit)
     elapsed = int((time.time() - t0) * 1000)
 
-    # Wypisz wynik
     route = " -> ".join([start_name] + best_perm + [start_name])
     print(f"--- Wynik TSP ---", file=sys.stderr)
     print(f"Kolejnosc: {route}", file=sys.stderr)
@@ -150,7 +124,6 @@ def run_tsp(args):
         print(f"Liczba przesiadek: {best_cost}", file=sys.stderr)
     print(f"Czas obliczen: {elapsed} ms", file=sys.stderr)
 
-    # Szczegóły trasy na stdout
     segments = solver.build_full_path(start_name, best_perm)
     for i, seg in enumerate(segments):
         print(f"{seg['from']} | {seg['to']} | {seg['route']} | "
@@ -162,9 +135,8 @@ def run_tsp(args):
                 print(f"  --- Przesiadka ({format_duration(wait)} oczekiwania) ---")
 
 
-# ==================== MAIN ====================
-
 def print_usage():
+    """Wypisuje instrukcję użycia programu."""
     print("Uzycie (Zadanie 1):", file=sys.stderr)
     print('  python main.py <start> <cel> <t|p> <HH:MM:SS> [RRRR-MM-DD] [dijkstra|astar]', file=sys.stderr)
     print('  Przyklad: python main.py "Wroclaw Glowny" "Jelenia Gora" t 08:00:00', file=sys.stderr)

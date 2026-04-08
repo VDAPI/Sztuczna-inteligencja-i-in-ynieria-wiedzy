@@ -4,11 +4,13 @@ from datetime import datetime, date
 
 
 def parse_time(hms: str) -> int:
+    """Konwertuje czas HH:MM:SS na sekundy od północy."""
     h, m, s = hms.strip().split(":")
     return int(h) * 3600 + int(m) * 60 + int(s)
 
 
 def format_time(seconds: int) -> str:
+    """Formatuje sekundy od północy na HH:MM:SS."""
     h = seconds // 3600
     m = (seconds % 3600) // 60
     s = seconds % 60
@@ -16,6 +18,7 @@ def format_time(seconds: int) -> str:
 
 
 def format_duration(seconds: int) -> str:
+    """Formatuje czas trwania w formacie czytelnym (np. '2h 15min')."""
     h = seconds // 3600
     m = (seconds % 3600) // 60
     if h > 0:
@@ -24,6 +27,8 @@ def format_duration(seconds: int) -> str:
 
 
 def normalize_name(name: str) -> str:
+    """Normalizuje nazwę przystanku: lowercase + usunięcie polskich znaków."""
+    # Mapa polskich znaków diakrytycznych na ASCII
     replacements = {
         "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n",
         "ó": "o", "ś": "s", "ź": "z", "ż": "z",
@@ -35,6 +40,7 @@ def normalize_name(name: str) -> str:
 
 
 def read_csv(filepath: str) -> list[dict]:
+    """Wczytuje plik CSV i zwraca listę słowników (z oczyszczonymi kluczami/wartościami)."""
     rows = []
     with open(filepath, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -45,16 +51,18 @@ def read_csv(filepath: str) -> list[dict]:
 
 
 class GTFSData:
+    """Główna klasa przechowująca dane GTFS (przystanki, trasy, kursy, rozkłady)."""
+
     def __init__(self, gtfs_dir: str):
         self.gtfs_dir = gtfs_dir
-        self.stops = {}
-        self.routes = {}
-        self.trips = {}
-        self.stop_times = {}
-        self.calendars = {}
-        self.cal_exceptions = {}
-        self.station_platforms = {} 
-        self.name_to_stop_ids = {}  
+        self.stops = {}               # stop_id -> dict z danymi przystanku
+        self.routes = {}               # route_id -> dict z danymi trasy
+        self.trips = {}                # trip_id -> dict z danymi kursu
+        self.stop_times = {}           # trip_id -> [lista stop_time entries]
+        self.calendars = {}            # service_id -> dict z kalendarzem
+        self.cal_exceptions = {}       # service_id -> [wyjątki kalendarzowe]
+        self.station_platforms = {}    # station_id -> [lista peronów]
+        self.name_to_stop_ids = {}     # znormalizowana_nazwa -> set(stop_id)
 
         self._load_all()
         self._build_lookups()
@@ -133,7 +141,7 @@ class GTFSData:
             days = [row[d] == "1" for d in day_names]
             self.calendars[sid] = {
                 "service_id": sid,
-                "days": days,  # [pon, wt, sr, czw, pt, sob, niedz]
+                "days": days,
                 "start_date": row["start_date"],
                 "end_date": row["end_date"],
             }
@@ -149,6 +157,7 @@ class GTFSData:
             })
 
     def _build_lookups(self):
+        """Buduje indeksy: station_platforms i name_to_stop_ids."""
         for stop in self.stops.values():
             station_id = self.get_station_id(stop["stop_id"])
             if station_id not in self.station_platforms:
@@ -162,7 +171,7 @@ class GTFSData:
             self.name_to_stop_ids[norm].add(stop["stop_id"])
 
     def get_station_id(self, stop_id: str) -> str:
-        """Zwróć ID stacji nadrzędnej (lub własne ID jeśli to stacja)."""
+        """Zwraca ID stacji nadrzędnej (lub własne ID jeśli brak parenta)."""
         stop = self.stops.get(stop_id)
         if not stop:
             return stop_id
@@ -170,41 +179,32 @@ class GTFSData:
         return parent if parent else stop_id
 
     def is_service_active(self, service_id: str, query_date: date) -> bool:
-        """
-        Sprawdź czy dany service jest aktywny w danym dniu.
-        
-        1. Sprawdź calendar.txt (tygodniowy wzorzec)
-        2. Nadpisz wyjątkami z calendar_dates.txt
-        """
+        """Sprawdza aktywność serwisu: calendar.txt (wzorzec tygodniowy) + calendar_dates.txt (wyjątki)."""
         active = False
 
-        # Krok 1: calendar.txt
         cal = self.calendars.get(service_id)
         if cal:
             start = datetime.strptime(cal["start_date"], "%Y%m%d").date()
             end = datetime.strptime(cal["end_date"], "%Y%m%d").date()
             if start <= query_date <= end:
-                # weekday(): 0=poniedziałek, 6=niedziela
                 active = cal["days"][query_date.weekday()]
 
-        # Krok 2: wyjątki nadpisują
+        # exception_type: 1 = dodany, 2 = usunięty
         exceptions = self.cal_exceptions.get(service_id, [])
         date_str = query_date.strftime("%Y%m%d")
         for ex in exceptions:
             if ex["date"] == date_str:
-                active = (ex["exception_type"] == 1)  # 1=dodany, 2=usunięty
+                active = (ex["exception_type"] == 1)
 
         return active
 
     def get_stop_ids_for_name(self, name: str) -> set:
-        """Znajdź stop_id-ki pasujące do nazwy przystanku."""
+        """Znajduje stop_id pasujące do nazwy (dokładne lub częściowe dopasowanie)."""
         norm = normalize_name(name)
 
-        # Dokładne dopasowanie
         if norm in self.name_to_stop_ids:
             return self.name_to_stop_ids[norm]
 
-        # Częściowe dopasowanie
         for key, ids in self.name_to_stop_ids.items():
             if norm in key or key in norm:
                 return ids
@@ -212,7 +212,7 @@ class GTFSData:
         return set()
 
     def get_route_name(self, trip_id: str) -> str:
-        """Zwróć nazwę linii dla danego tripu (np. "D6")."""
+        """Zwraca nazwę linii dla danego kursu (np. 'D6')."""
         trip = self.trips.get(trip_id)
         if not trip:
             return "?"
@@ -222,6 +222,6 @@ class GTFSData:
         return route["display_name"]
 
     def get_stop_name(self, stop_id: str) -> str:
-        """Zwróć nazwę przystanku."""
+        """Zwraca nazwę przystanku po jego ID."""
         stop = self.stops.get(stop_id)
         return stop["stop_name"] if stop else stop_id
