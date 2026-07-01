@@ -1,0 +1,19 @@
+# Wyniki uruchomien (CSV, MD, macierze pomylek)
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.ipynb_checkpoints/
+
+# Srodowiska
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

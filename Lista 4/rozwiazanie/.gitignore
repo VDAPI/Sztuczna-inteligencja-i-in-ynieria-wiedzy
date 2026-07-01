@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+# wyniki generowane lokalnie (zostaw jeśli chcesz wersjonować)
+results/*.png
+results/*.csv
+!results/.gitkeep
+# dane (zwykle nie wrzucamy do repo)
+data/*.csv

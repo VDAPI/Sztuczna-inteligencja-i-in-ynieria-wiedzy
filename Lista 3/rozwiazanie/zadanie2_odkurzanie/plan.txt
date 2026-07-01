@@ -1,0 +1,5 @@
+(clean rumba pokoj1)
+(move rumba pokoj1 pokoj3)
+(clean rumba pokoj3)
+(move rumba pokoj3 pokoj2)
+(clean rumba pokoj2)

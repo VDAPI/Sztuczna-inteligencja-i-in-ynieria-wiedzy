@@ -1,0 +1,27 @@
+# --- Rdzen: modele i dane ---
+torch
+transformers>=4.44
+datasets
+# UWAGA: jezeli load_dataset("allegro/klej-polemo2-in") rzuca blad o skryptach,
+# zainstaluj starsza wersje datasets:  pip install "datasets<3.0"
+accelerate
+
+# --- LLM: parsowanie / prompty (zgodnie z lista) ---
+langchain-huggingface
+langchain-core
+pydantic>=2
+
+# --- Kwantyzacja 4-bit (zadanie 5, opcjonalne) ---
+bitsandbytes
+
+# --- Tokenizacja modeli (HerBERT/Qwen) ---
+sentencepiece
+protobuf
+
+# --- Metryki / analiza / wykresy ---
+scikit-learn
+pandas
+numpy
+matplotlib
+seaborn
+tqdm

@@ -1,0 +1,24 @@
+| cecha        | wartość         |   liczność |   udział_% |
+|:-------------|:----------------|-----------:|-----------:|
+| Drug         | D-penicillamine |        158 |       37.8 |
+| Drug         | Placebo         |        154 |       36.8 |
+| Drug         | nan             |        106 |       25.4 |
+| Sex          | F               |        374 |       89.5 |
+| Sex          | M               |         44 |       10.5 |
+| Ascites      | N               |        288 |       68.9 |
+| Ascites      | nan             |        106 |       25.4 |
+| Ascites      | Y               |         24 |        5.7 |
+| Hepatomegaly | Y               |        160 |       38.3 |
+| Hepatomegaly | N               |        152 |       36.4 |
+| Hepatomegaly | nan             |        106 |       25.4 |
+| Spiders      | N               |        222 |       53.1 |
+| Spiders      | nan             |        106 |       25.4 |
+| Spiders      | Y               |         90 |       21.5 |
+| Edema        | N               |        354 |       84.7 |
+| Edema        | S               |         44 |       10.5 |
+| Edema        | Y               |         20 |        4.8 |
+| Stage        | 3.0             |        155 |       37.1 |
+| Stage        | 4.0             |        144 |       34.4 |
+| Stage        | 2.0             |         92 |       22   |
+| Stage        | 1.0             |         21 |        5   |
+| Stage        | nan             |          6 |        1.4 |
